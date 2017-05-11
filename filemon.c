@@ -502,8 +502,7 @@ main (int argc, char **argv)
 			   free (linkName);
 			}
 
-		   // Autostop only if this is a file creation, and interesting
-		   if (autostop && fse->type == FSE_CREATE_FILE ) { 
+		   if (autostop) { 
 				  fprintf(stderr, "%sAuto-stopping process %s (%d) on file operation%s\n", 
 						"",
 						    procName,
