@@ -1,7 +1,7 @@
 DEBUG = 0
 
-ARCHS = armv7
-TARGET = iphone:clang:latest:9.3
+ARCHS = armv7 arm64
+TARGET = iphone:clang:latest:7.1
 CLANG = xcrun -sdk iphoneos clang
 
 TARGET_CC  = $(CLANG)
@@ -9,7 +9,7 @@ TARGET_CXX = $(CLANG)
 TARGET_LD  = $(CLANG)
 
 # add entitlements
-#TARGET_CODESIGN_FLAGS ?= -Sentitlements.xml
+TARGET_CODESIGN_FLAGS ?= -Sent.xml
 
 include $(THEOS)/makefiles/common.mk
 

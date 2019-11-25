@@ -17,6 +17,8 @@
 #include "fsevents.h"
 //#include "colors.h" 
 #include <signal.h> // for kill
+#include <sys/select.h>
+#include <termios.h>
 
 
 #pragma pack(1)
@@ -58,7 +60,38 @@ typedef struct kfs_event_arg {
  *
  */
 
+struct termios orig_termios;
+
+void reset_terminal_mode()
+{
+    tcsetattr(0, TCSANOW, &orig_termios);
+}
+
+void set_conio_terminal_mode()
+{
+    struct termios new_termios;
+
+    /* take two copies - one for now, one for later */
+    tcgetattr(0, &orig_termios);
+    memcpy(&new_termios, &orig_termios, sizeof(new_termios));
+
+    /* register cleanup handler, and set the new terminal mode */
+    atexit(reset_terminal_mode);
+    cfmakeraw(&new_termios);
+    tcsetattr(0, TCSANOW, &new_termios);
+}
+
+int kbhit()
+{
+    struct timeval tv = { 0L, 0L };
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(0, &fds);
+    return select(1, &fds, NULL, NULL, &tv);
+}
+
 int g_dumpArgs =0;
+pid_t g_selfPID = 0;
 
 #define BUFSIZE 1024 *1024
 
@@ -220,13 +253,15 @@ usage()
 
 #define MAX_FILTERS	10
 
-int 
-interesting_process (int pid, char *Filters[], int NumFilters)
-{
-	// filter myself out
-	if (pid == getpid()) return 0; 
-	// Otherwise, if no user defined filters, get all
-	if (!NumFilters) return 1; 
+int interesting_process (int pid, pid_t *filters, int numFilters) {
+	if (pid == g_selfPID) return 0; 
+	if (!numFilters) return 1;
+	for (int i = 0; i < numFilters; i++) {
+            if (filters[i] == pid) {
+                return 1;
+            }
+        }
+
 	return 0;
 }
 	
@@ -269,7 +304,7 @@ main (int argc, char **argv)
 	int autostop = 0;
 	int autolink = 0;
 	char *fileFilters[MAX_FILTERS]= { 0 };
-	char *procFilters[MAX_FILTERS]= { 0 };
+	pid_t procFilters[MAX_FILTERS]= { 0 };
 
 	int numFileFilters = 0;
 	int numProcFilters = 0;
@@ -293,8 +328,22 @@ main (int argc, char **argv)
 				   argv[arg]); 
 			   exit(2);
 			}
-			numProcFilters++;
+			
+			// Got it - add filters, separate by ","
 
+			char *begin = argv[arg+1];
+			char *sep = strchr (begin, ',');
+			while (sep)
+			{
+			      *sep = '\0';
+			      fprintf(stderr,"Adding Proc filter %d: %s\n", numFileFilters, begin);
+			      procFilters[numProcFilters++] = atoi(begin);
+			      begin = sep + 1;
+			      sep = strchr (begin, ',');
+			   
+			}
+			fprintf(stderr,"Adding Proc filter %d: %s\n", numProcFilters, begin);
+		        procFilters[numProcFilters++] = atoi(begin);
 			arg++; continue;
 		}
 
@@ -385,6 +434,8 @@ main (int argc, char **argv)
 		 exit(1);
 	}
 
+        g_selfPID = getpid();
+
 
 	// Prepare event mask list. In our simple example, we want everything
 	// (i.e. all events, so we say "FSE_REPORT" all). Otherwise, we 
@@ -422,7 +473,7 @@ main (int argc, char **argv)
 	
 	// And now we simply read, ad infinitum (aut nauseam)
 
-	while ((rc = read (cloned_fsed, buf, BUFSIZE)) > 0)
+	while (kbhit() == 0 && (rc = read (cloned_fsed, buf, BUFSIZE)) > 0)
 	{
 		// rc returns the count of bytes for one or more events:
 		int offInBuf = 0;
